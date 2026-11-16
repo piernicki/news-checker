@@ -36,28 +36,70 @@ Each run searches the last `daily.lookback_days` days (with overlap; duplicates 
 links, writes `reports/<YYYY-MM-DD_HHMM>.html` and sends the "match" and "unclear" links to Telegram. If nothing new
 was found, no report is created and nothing is sent.
 
-## Quick start (Docker)
+## Running with Docker Compose
 
-Create a working directory with three files:
+The image is published on the GitHub Container Registry: `ghcr.io/piernicki/news-checker`
+(tags `X.Y.Z`, `X.Y`, `latest`, and `edge` for the latest `main`). It runs on `linux/amd64` and `linux/arm64`.
+
+### 1. Prepare a working directory
+
+```bash
+mkdir news-checker && cd news-checker
+BASE=https://raw.githubusercontent.com/piernicki/news-checker/main
+curl -fsSLo docker-compose.yml "$BASE/docker-compose.yml"
+curl -fsSLo config.yaml "$BASE/config.example.yaml"
+curl -fsSLo .env "$BASE/.env.example"
+mkdir -p data reports logs
+sudo chown -R 1000:1000 data reports logs   # Linux only: the container runs as uid 1000
+```
+
+The directory then looks like this:
 
 ```
 news-checker/
-├── config.yaml          # from config.example.yaml
-├── .env                 # from .env.example: API keys and the bot token
-└── docker-compose.yml   # from this repository
+├── docker-compose.yml   # image tag, time zone, volumes
+├── config.yaml          # who to look for, queries, providers, filters, schedule
+├── .env                 # API keys and the Telegram bot token
+├── data/                # SQLite database
+├── reports/             # HTML reports
+└── logs/                # news-checker.log
 ```
+
+### 2. Configure
+
+- `config.yaml`: describe the person in `classifier.subject`, adjust `queries`, `filters`, `telegram_web.terms`,
+  `schedule.cron` and `reports.language`. See [Configuration](#configuration).
+- `.env`: fill in the keys you have (a provider without a key is skipped) and the Telegram bot token and chat id
+  (see [Telegram delivery](#telegram-delivery)).
+- `docker-compose.yml`: pin the image version (`ghcr.io/piernicki/news-checker:0.1` gets 0.1.x fixes) and set
+  `TZ` for log timestamps.
+
+### 3. Check and run
 
 ```bash
-cp config.example.yaml config.yaml   # describe the person, queries, filters
-cp .env.example .env                 # add API keys
-
-docker compose run --rm news-checker check      # validate the config, see active providers
-docker compose run --rm news-checker backfill   # initial collection (backfill.days)
-docker compose up -d                            # daily runs on schedule.cron
+docker compose pull
+docker compose run --rm news-checker check        # config, active providers, classifier, delivery
+docker compose run --rm news-checker tg-bot-chats # find the chat_id for TG_CHAT_ID
+docker compose run --rm news-checker backfill     # initial collection over backfill.days, sends one report
+docker compose up -d                              # run on schedule.cron in the background
 ```
 
-`data/` (SQLite database), `reports/` and `logs/` are created in the working directory. On Linux the container
-runs as uid 1000, so these directories must be writable by it: `sudo chown -R 1000:1000 data reports logs`.
+`backfill` is optional: without it the first scheduled run reports only the last `daily.lookback_days` days.
+
+### 4. Everyday operations
+
+```bash
+docker compose logs -f                            # console output of the service
+tail -f logs/news-checker.log                     # structured log (RUN, NEW, SKIP, DELIVERY, ...)
+docker compose run --rm news-checker run          # an extra run right now
+docker compose run --rm news-checker send         # resend the latest report to Telegram
+docker compose restart                            # after editing config.yaml or .env
+docker compose pull && docker compose up -d       # update to the latest image of the pinned tag
+docker compose down                               # stop
+```
+
+Commands run with `docker compose run --rm` use the same image, config and data as the service. Back up `data/`
+(the database) and `config.yaml`; everything else can be recreated.
 
 ## Local run (uv)
 
