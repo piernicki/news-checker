@@ -6,7 +6,7 @@
 #   docker compose run --rm news-checker backfill         # initial collection
 services:
   news-checker:
-    image: <dockerhub-user>/news-checker:0.1    # or news-checker:latest for a locally built image
+    image: ghcr.io/piernicki/news-checker:0.1   # or news-checker:latest for a locally built image
     restart: unless-stopped
     env_file:
       - path: .env

@@ -20,17 +20,20 @@ jobs:
       - run: uv sync --locked
       - run: uv run pytest -q
 
-  docker:
-    # Pushes to Docker Hub: tag vX.Y.Z -> X.Y.Z, X.Y, X (from 1.0 on) and latest; main -> edge.
+  image:
+    # Publishes ghcr.io/<owner>/<repo>: tag vX.Y.Z -> X.Y.Z, X.Y, X (from 1.0 on) and latest; main -> edge.
     needs: test
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    env:
-      IMAGE: ${{ vars.DOCKERHUB_IMAGE || format('{0}/news-checker', secrets.DOCKERHUB_USERNAME) }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Image name (registry paths must be lowercase)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@v6
       - name: Package version from git
         id: version
@@ -48,8 +51,9 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
         with:
           context: .

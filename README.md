@@ -50,7 +50,6 @@ news-checker/
 ```bash
 cp config.example.yaml config.yaml   # describe the person, queries, filters
 cp .env.example .env                 # add API keys
-# in docker-compose.yml set `image:` to <dockerhub-user>/news-checker:<version>
 
 docker compose run --rm news-checker check      # validate the config, see active providers
 docker compose run --rm news-checker backfill   # initial collection (backfill.days)
@@ -176,12 +175,14 @@ git push origin v0.2.0
 ```
 
 The [CI workflow](.github/workflows/ci.yml) runs the tests on every push and pull request. On a `vX.Y.Z` tag it
-builds a multi-arch image (`linux/amd64`, `linux/arm64`) and pushes it to Docker Hub as `X.Y.Z`, `X.Y`, `X`
+builds a multi-arch image (`linux/amd64`, `linux/arm64`) and pushes it to the GitHub Container Registry
+(`ghcr.io/piernicki/news-checker`) as `X.Y.Z`, `X.Y`, `X`
 (from 1.0 on) and `latest`; every push to `main` is published as `edge`. Pin a minor version (`0.2`) on servers to
 get fixes without surprises.
 
-Repository settings needed for publishing: secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a Docker Hub access
-token), and optionally the variable `DOCKERHUB_IMAGE` (default `<DOCKERHUB_USERNAME>/news-checker`).
+Publishing uses the workflow's built-in `GITHUB_TOKEN`; no secrets are needed. A new package on GHCR is
+private by default: after the first release make it public in the package settings (Package settings →
+Change visibility) so servers can pull it without `docker login`.
 
 `news-checker --version` and the image label `org.opencontainers.image.version` show the version. Builds between
 tags get a development version such as `0.2.1.dev3+g1a2b3c4`.
