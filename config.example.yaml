@@ -1,0 +1,160 @@
+# news-checker example config. Copy it next to your .env as config.yaml and adjust.
+# Relative paths are resolved against the directory of this file.
+# Secrets live in .env and are substituted as ${VAR} (or ${VAR:-default}).
+
+# ---------------------------------------------------------------------------
+# Search queries for search-engine providers (serper, brave, yandex).
+#   phrases      exact phrases; match: all (every phrase) | any (one of them, e.g. spelling variants)
+#   any          plus at least one of these words (context against namesakes)
+#   exclude      negative phrases, sent as -"…" and also checked in title/snippet
+#   langs        pl | ru | uk | en; every language is a separate provider call
+#   site         restrict to a site; providers: only these providers
+#   date_window  false: no date filter (search engines have no dates for e.g. t.me posts)
+# ---------------------------------------------------------------------------
+queries:
+  - id: name-pl
+    phrases: ["Jan Kowalski", "Jana Kowalskiego", "Janem Kowalskim", "Kowalski Jan"]
+    match: any
+    langs: [pl, en]
+    providers: [serper, yandex]
+
+  - id: name-ru
+    phrases: ["Ян Ковальский", "Яна Ковальского", "Яном Ковальским"]
+    match: any
+    langs: [ru]
+    providers: [serper, yandex]
+
+  - id: surname-context-ru
+    phrases: ["Ковальский"]
+    any: [юрист, адвокат, Польша, Польше]
+    langs: [ru]
+
+  - id: handles
+    phrases: ["example-law.pl", "example_channel"]
+    match: any
+    langs: [pl, ru]
+    providers: [serper, yandex]    # Brave splits domains and handles into words
+
+  - id: telegram-web               # public Telegram posts indexed by search engines
+    phrases: ["Ян Ковальский", "Jan Kowalski", "example_channel"]
+    match: any
+    site: t.me
+    date_window: false
+    langs: [ru]
+    providers: [serper, yandex]
+
+# ---------------------------------------------------------------------------
+# Providers. A provider without its key is skipped (see `news-checker check`).
+# Common options: enabled, run_limit, monthly_limit, backfill, backfill_window_days.
+# ---------------------------------------------------------------------------
+providers:
+  serper:
+    type: serper                 # Google via serper.dev; 2,500 free credits
+    api_key: ${SERPER_API_KEY}
+    num: 10
+    pages: 1
+    monthly_limit: 800
+    backfill_window_days: 90
+
+  brave:
+    type: brave                  # Brave Search API; $5 free credit per month
+    api_key: ${BRAVE_API_KEY}
+    count: 20
+    monthly_limit: 900
+    backfill_window_days: 90
+
+  yandex:
+    type: yandex                 # Yandex Cloud Search API v2
+    api_key: ${YANDEX_API_KEY}
+    folder_id: ${YANDEX_FOLDER_ID}
+    mode: sync                   # deferred is cheaper, but new folders often have no quota for it (HTTP 429)
+    min_interval_seconds: 1.2    # sync search allows about one request per second
+    monthly_limit: 600
+    backfill_window_days: 90
+
+  telegram_web:
+    type: telegram_web           # search inside public channels via t.me/s/<channel>?q=… (no account needed)
+    terms: ["Ковальский", "Kowalski", "example_channel"]
+    channels: []                 # plus channels discovered automatically from t.me links in search results
+    max_pages: 10                # pages of 20 posts per term on the first search of a channel
+    min_interval_seconds: 1.0
+
+# ---------------------------------------------------------------------------
+filters:
+  exclude_domains:               # also sent to Serper/Brave as -site:domain
+    - example-law.pl             # own website
+    - threads.com
+    - threads.net
+    - instagram.com              # search snippets for Instagram are unreliable
+  exclude_url_prefixes:          # case-insensitive
+    - t.me/example_channel       # own Telegram channel
+    - youtube.com/@jankowalski
+  exclude_url_regex:
+    - '^https://([a-z]{2}\.)?linkedin\.com/in/jan-kowalski'
+    # profile, channel, Reels and likes pages: nothing about the person except the name
+    - '^https://(www\.|m\.)?facebook\.com/(p/)?[^/?]+/?$'
+    - '^https://(www\.|m\.)?facebook\.com/[^/]+/reels/?$'
+    - '/videos/liker/'
+    - '^https://(www\.)?instagram\.com/[^/?]+/?$'
+    - '^https://(www\.)?youtube\.com/@[^/]+(/(playlists|videos|featured|about|streams|shorts))?/?$'
+  # Case-insensitive regexes over title + snippet, for every provider. Dropped links are logged as SKIP.
+  exclude_text:
+    - 'Photo by (Jan Kowalski|Ян Ковальский)'   # post author on Instagram: the person or a namesake
+    - 'jan\.kowalski@example\.pl'               # own email: signature of own comments
+    - 'Piotr(a|em|owi)?\s+Kowalsk'              # a known namesake
+  ignore_telegram_chats: []      # chats the person is a member of: username without @ or numeric id
+
+# ---------------------------------------------------------------------------
+# LLM filter for new links: match / no match / unclear. "No match" links are collapsed in the report.
+# Key: ANTHROPIC_API_KEY in .env.
+# ---------------------------------------------------------------------------
+classifier:
+  enabled: true
+  type: anthropic
+  model: claude-haiku-5-5
+  effort: low
+  batch_size: 20
+  monthly_limit: 300             # model requests per month (one request = a batch of up to 20 links)
+  hide_no_match: true
+  subject: |
+    Jan Kowalski, a lawyer in Poland (adwokat). Practice: immigration law for foreigners in Poland — residence
+    permits, permanent residence, citizenship; often comments on court decisions for the media.
+    Resources: Telegram channel t.me/example_channel, website example-law.pl, LinkedIn linkedin.com/in/jan-kowalski.
+    Known namesakes (NOT him): Piotr Kowalski (football coach); other people with the surname Kowalski.
+  # Optional: replace the built-in system prompt (news_checker/classifiers/anthropic_llm.py). Placeholders:
+  # {subject} and {reason_language}; write other literal braces as {{ }}. The answer schema stays the same:
+  # a verdict match | no_match | unclear and a short reason per link.
+  # prompt: |
+  #   You filter search results about {subject} ... Write every reason in {reason_language}.
+
+schedule:
+  cron: ["0 7 * * *"]            # several are allowed: ["0 7 * * *", "0 19 * * *"]
+  timezone: Europe/Warsaw
+  run_on_start: false
+
+daily:
+  lookback_days: 3
+
+backfill:
+  days: 730
+
+storage:
+  url: sqlite:///data/news.db    # or postgresql+psycopg://user:pass@host/db (install psycopg)
+
+logging:
+  dir: logs                      # logs/news-checker.log, rotated at midnight
+  level: INFO                    # DEBUG also logs duplicates
+  retention_days: 90
+
+reports:
+  dir: reports
+  language: en                   # en | ru: HTML report, Telegram message and classifier reasons
+  # title: New mentions — Jan Kowalski
+  telegram:                      # send reports to a Telegram group with a bot
+    enabled: true
+    bot_token: ${TG_BOT_TOKEN}     # from @BotFather
+    chat_id: ${TG_CHAT_ID}         # group id; see `news-checker tg-bot-chats`
+    max_links: 50                  # links in the message text; the rest only in the attached HTML
+    include_unclear: true
+    attach_html: true
+    max_attempts: 5                # how many runs in a row to retry a failed delivery

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+
+# local working data and secrets
+.env
+config.yaml
+data/
+reports/
+logs/
+*.db

@@ -1,0 +1,20 @@
+# Put this file into the working directory next to config.yaml and .env;
+# data/, reports/ and logs/ are created there.
+#
+#   docker compose up -d                                  # run on schedule.cron
+#   docker compose run --rm news-checker check            # validate the config
+#   docker compose run --rm news-checker backfill         # initial collection
+services:
+  news-checker:
+    image: <dockerhub-user>/news-checker:0.1    # or news-checker:latest for a locally built image
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: Europe/Warsaw                        # time zone of log timestamps
+    volumes:
+      - ./config.yaml:/work/config.yaml:ro
+      - ./data:/work/data
+      - ./reports:/work/reports
+      - ./logs:/work/logs
