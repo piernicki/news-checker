@@ -48,6 +48,7 @@ class SerperProvider(Provider):
                 items = resp.json().get(key, [])
                 out.extend(
                     Mention(url=i["link"], title=i.get("title", ""), snippet=i.get("snippet", ""),
+                            display_url=i.get("displayedLink", ""),
                             published_at=parse_date(i.get("date")),
                             source_type="news" if endpoint == "news" else None)
                     for i in items if i.get("link")

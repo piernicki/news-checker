@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 from .config import DEFAULT_TRACKING_PARAMS
@@ -23,6 +24,13 @@ def unwrap_redirect(url: str) -> str:
         if target and target.startswith("http"):
             return unquote(target)
     return url
+
+
+def is_google_redirect(url: str) -> bool:
+    """A Google redirect whose target could not be unwrapped (e.g. google.com/goto?url=<opaque token>)."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower().removeprefix("www.")
+    return bool(re.fullmatch(r"google\.[a-z.]+", host)) and parts.path in ("/goto", "/url")
 
 
 def host_of(url: str) -> str:

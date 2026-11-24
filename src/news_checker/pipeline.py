@@ -15,7 +15,7 @@ import httpx
 from .config import Settings
 from .filters import MentionFilter
 from .models import Mention, SearchRequest
-from .normalize import canonical_url, classify, host_of
+from .normalize import canonical_url, classify, host_of, is_google_redirect
 from .providers import REGISTRY, Budget, BudgetExceeded, Provider, ProviderNotConfigured
 from .providers.base import short_error
 from .storage import Store, utcnow
@@ -186,6 +186,12 @@ class Pipeline:
             return "filtered"
         url = canonical_url(m.url, self.settings.filters.tracking_params)
         host = host_of(url)
+        if is_google_redirect(url) and m.display_url:
+            # Google hides the target behind an opaque token; a complete t.me channel name in the displayed
+            # address still lets telegram_web search that channel
+            chan = _tg_channel_from_display(m.display_url)
+            if chan:
+                self._track_tg_channel(f"https://t.me/s/{chan}")
         if host == "t.me" and self._track_tg_channel(m.url):
             # a channel feed (t.me/s/<channel>?before=N) opens the wrong post; the channel goes to telegram_web
             stats.filtered += 1
@@ -230,6 +236,18 @@ def _tg_channel_of(original_url: str) -> tuple[str | None, bool]:
         return None, is_feed
     name = parts[0].lstrip("@").lower()
     return (name if re.fullmatch(r"[a-z0-9_]{4,64}", name) else None), is_feed
+
+
+def _tg_channel_from_display(display_url: str) -> str | None:
+    """Channel name from a displayed address like 'https://t.me › s › channel'; None if it is cut off ('chan...')."""
+    parts = [p.strip() for p in display_url.replace("›", "/").split("/") if p.strip()]
+    if not parts or parts[-1].endswith(("...", "…")):
+        return None
+    parts = [p for p in parts if p not in ("https:", "http:", "s")]
+    if len(parts) < 2 or parts[0].lower() not in ("t.me", "telegram.me"):
+        return None
+    name = parts[1].lstrip("@").lower()
+    return name if re.fullmatch(r"[a-z0-9_]{4,64}", name) and name not in _TG_RESERVED else None
 
 
 def _window(req: SearchRequest) -> str:

@@ -137,3 +137,27 @@ def test_migration_adds_columns(tmp_path):
     Store(f"sqlite:///{path}")
     cols = {r[1] for r in sqlite3.connect(path).execute("pragma table_info(mentions)")}
     assert {"verdict", "verdict_reason", "classifier", "classified_at"} <= cols
+
+
+def test_google_redirects_are_dropped_but_reveal_channels(settings, store):
+    from news_checker.filters import MentionFilter
+    from news_checker.normalize import canonical_url, host_of
+
+    goto = "https://www.google.com/goto?url=CAESYwHEIkXX_opaque&gsessionid=abc"
+
+    @register("fake_goto")
+    class GotoLinks(FakeProvider):
+        def search(self, req):
+            return [Mention(url=goto, title="Law News", display_url="https://t.me › lawnews"),
+                    Mention(url=goto + "2", title="Cut", display_url="https://t.me › very_long_chan..."),
+                    Mention(url=goto + "3", title="Feed", display_url="https://t.me › s › itnews")]
+
+    settings.providers = {"p": ProviderConfig(type="fake_goto")}
+    st = Pipeline(settings, store).collect("daily").stats["p"]
+    assert st.new == 0 and st.filtered == 6  # 3 links × 2 languages of q1
+    assert set(store.list_tg_channels()) == {"lawnews", "itnews"}  # a cut-off name is not guessed
+    f = MentionFilter(settings.filters)
+    c = canonical_url(goto)
+    assert f.reason(c, host_of(c)) == "google_redirect"
+    c = canonical_url("https://www.google.com/url?q=https://a.pl/x")  # decodable redirects are unwrapped instead
+    assert f.reason(c, host_of(c)) is None and c == "https://a.pl/x"

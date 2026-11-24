@@ -32,3 +32,4 @@ class Mention:
     source_type: SourceType | None = None  # None: derive from the domain
     provider: str = ""
     query_id: str = ""
+    display_url: str = ""  # the address a search engine shows (e.g. "https://t.me › channel"), if different

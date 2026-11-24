@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from .config import FiltersConfig
-from .normalize import canonical_url, strip_scheme
+from .normalize import canonical_url, is_google_redirect, strip_scheme
 
 
 class MentionFilter:
@@ -43,6 +43,8 @@ class MentionFilter:
 
     def reason(self, url: str, host: str) -> str | None:
         """Reason to drop by URL (canonical), or None."""
+        if is_google_redirect(url):
+            return "google_redirect"
         if any(host == d or host.endswith("." + d) for d in self.domains):
             return "domain"
         bare = strip_scheme(url).lower()
